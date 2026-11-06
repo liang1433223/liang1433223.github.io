@@ -2,15 +2,18 @@
 /* =====================================================================
    云端会客厅 · 纯静态版
    无服务端：房间与消息全部走公共 MQTT over WebSocket。
+   - 同时连 3 条公共通道；大厅条目广播到所有通道并标注房主所在通道，
+     访客点房卡时自动切到房主通道再进房（消除多通道"分脑"）
    - 口令不落任何存储，只用来派生私有频道名（hash 后 16 位）
    - 房间内所有消息 AES-256-GCM 端到端加密，密钥 = 房号+口令派生，
      只存在于成员浏览器内存里，broker 与旁听者看到的全是密文
-   - 大厅 = 房主定时重发的 retained 消息（房主一走就清空，仅含房间名不含口令）
+   - 大厅 = 房主定时重发的 retained 消息，新鲜度按本地接收时间判断
+     （不比对房主时钟，免疫双方时钟偏差）
    - 聊天记录不 retain，晚进来的人天然看不到旧消息
    ===================================================================== */
 
 /* ================= 常量 ================= */
-const NS = 'yunduan7f3a';              // 频道命名空间
+const NS = 'yunduan7f3a';
 const BROKERS = [
   'wss://broker-cn.emqx.io:8084/mqtt',
   'wss://broker.emqx.io:8084/mqtt',
@@ -18,8 +21,8 @@ const BROKERS = [
 ];
 const HB_MS = 4000;                    // 心跳间隔
 const HOST_TIMEOUT_MS = 14000;         // 房主失联判定
-const MEMBER_TTL_MS = 16000;           // 成员列表过期
-const LOBBY_TTL_MS = 16000;            // 大厅条目过期
+const MEMBER_TTL_MS = 16000;           // 成员列表过期（本地接收时间）
+const LOBBY_STALE_MS = 20000;          // 大厅条目过期（本地接收时间，房主 4s 一跳）
 const JOIN_WAIT_MS = 2600;             // 握手等待
 const TICK_MS = 2000;
 const MAX_LEN = 500;
@@ -33,12 +36,9 @@ const RID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 /* ================= 状态 ================= */
 const S = {
   me: null,
-  client: null,
-  connected: false,
-  connecting: false,
-  brokerIdx: 0,
+  brokers: [],           // [{url, client, connected, connecting, retryTimer}]
+  primary: 0,            // 房间流量走的通道（进房期间锁定）
   wantReconnect: true,
-  retryTimer: null,
   waiters: [],
 
   roomId: null,
@@ -46,15 +46,15 @@ const S = {
   pwHash: '',
   isHost: false,
   members: new Map(),
-  lobby: new Map(),
+  lobby: new Map(),      // rid -> 条目 + _b(所在通道) + _ts(本地最近收到)
   lastHostTs: 0,
   hbTimer: null,
   tickTimer: null,
   pendingHere: null,
   pendingJoin: null,
   seq: 0,
-  aesKey: null,       // 房间 AES-GCM 密钥（房号+口令派生，只在本页内存）
-  cacheBye: null,     // 关页时同步发出的预加密告别包
+  aesKey: null,          // 房间 AES-GCM 密钥（房号+口令派生，只在本页内存）
+  cacheBye: null,        // 关页时同步发出的预加密告别包
   cacheLeave: null,
   decQueue: Promise.resolve(),
   _msig: '',
@@ -157,143 +157,145 @@ async function decPayload(text) {
   try { return JSON.parse(text); } catch (_) { return null; }
 }
 
-/* ================= 连接 ================= */
-function setConn(state) {
+/* ================= 多通道连接 ================= */
+function setConn() {
   const el = $('#connState');
   if (!el) return;
-  const m = {
-    wait: ['○ 连接中', 'color:var(--gold2)'],
-    ok: ['● 云路已通', 'color:var(--teal)'],
-    off: ['● 云路已断', 'color:#e8836f'],
-  }[state] || ['○ 连接中', ''];
-  el.textContent = m[0];
-  el.setAttribute('style', m[1] + ';background:transparent;border-color:rgba(255,255,255,.12)');
+  const total = S.brokers.length;
+  const n = S.brokers.filter(b => b.connected).length;
+  const prim = S.brokers[S.primary] && S.brokers[S.primary].connected;
+  let txt, color;
+  if (prim && n === total) { txt = '● 云路已通'; color = 'var(--teal)'; }
+  else if (prim) { txt = `● 云路已通 ${n}/${total}`; color = 'var(--teal)'; }
+  else if (n > 0) { txt = `○ 备用云路 ${n}/${total}`; color = 'var(--gold2)'; }
+  else { txt = '● 云路已断'; color = '#e8836f'; }
+  el.textContent = txt;
+  el.setAttribute('style', `color:${color};background:transparent;border-color:rgba(255,255,255,.12)`);
+  renderLobby();   // 断线状态会体现在大厅提示上
 }
 
-function connect() {
-  if (S.connecting) return;
-  S.connecting = true;
-  setConn('wait');
-  const url = BROKERS[S.brokerIdx % BROKERS.length];
-  let settled = false;
-
+function connectBroker(bi) {
+  const b = S.brokers[bi];
+  if (b.connecting || b.connected) return;
+  b.connecting = true;
+  setConn();
   let c;
   try {
-    c = mqtt.connect(url, {
+    c = mqtt.connect(b.url, {
       clientId: 'wbc_' + rand(14, 'abcdefghijkmnpqrstuvwxyz0123456789'),
-      clean: true,
-      keepalive: 25,
-      connectTimeout: 8000,
-      reconnectPeriod: 0,
-      protocolVersion: 4,
+      clean: true, keepalive: 25, connectTimeout: 8000,
+      reconnectPeriod: 0, protocolVersion: 4,
     });
-  } catch (e) {
-    S.connecting = false;
-    setTimeout(nextBroker, 800);
+  } catch (_) {
+    b.connecting = false;
+    scheduleRetry(bi);
     return;
   }
-  S.client = c;
-
+  b.client = c;
+  let settled = false;
   const guard = setTimeout(() => {
     if (settled) return;
     settled = true;
-    S.connecting = false;
+    b.connecting = false;
     try { c.end(true); } catch (_) {}
-    nextBroker();
+    scheduleRetry(bi);
   }, 9000);
 
   c.on('connect', () => {
     clearTimeout(guard);
     settled = true;
-    S.connecting = false;
-    S.connected = true;
-    setConn('ok');
-    onConnected();
-    S.waiters.splice(0).forEach(fn => fn(true));
+    b.connecting = false;
+    b.connected = true;
+    onBrokerConnected(bi);
+    maybeReassignPrimary();
+    flushWaiters();
+    setConn();
   });
 
   c.on('error', () => { /* 交给 close / guard 处理 */ });
 
   c.on('close', () => {
-    S.connected = false;
-    S.connecting = false;
+    b.connected = false;
+    b.connecting = false;
     if (!settled) {
       settled = true;
       clearTimeout(guard);
-      nextBroker();
+      scheduleRetry(bi);
+      setConn();
       return;
     }
-    setConn('off');
-    if (S.wantReconnect && !S.retryTimer) {
-      S.retryTimer = setTimeout(() => { S.retryTimer = null; nextBroker(); }, 1200);
-    }
+    setConn();
+    maybeReassignPrimary();
+    if (S.wantReconnect) scheduleRetry(bi);
   });
 
-  c.on('message', onMessage);
+  c.on('message', (topic, buf) => onMessage(bi, topic, buf));
 }
 
-function nextBroker() {
-  if (!S.wantReconnect) return;
-  S.brokerIdx = (S.brokerIdx + 1) % BROKERS.length;
-  connect();
+function scheduleRetry(bi) {
+  const b = S.brokers[bi];
+  if (!S.wantReconnect || b.retryTimer) return;
+  b.retryTimer = setTimeout(() => { b.retryTimer = null; connectBroker(bi); }, 2500 + bi * 800);
 }
 
-function onConnected() {
-  S.lobby.clear();
-  S._lsig = '';
-  renderLobby();
-  subscribe([NS + '/lobby/+']);
-  if (S.roomId && S.pwHash) {
-    subscribe([T.ctrl(S.roomId, S.pwHash), T.msg(S.roomId, S.pwHash)]);
+/* 不在房间里时，若主通道挂了就把最先连上的通道提为主 */
+function maybeReassignPrimary() {
+  if (S.roomId) return;
+  if (S.brokers[S.primary] && S.brokers[S.primary].connected) return;
+  const ok = S.brokers.findIndex(b => b.connected);
+  if (ok >= 0 && ok !== S.primary) S.primary = ok;
+}
+
+function onBrokerConnected(bi) {
+  const b = S.brokers[bi];
+  try { b.client.subscribe(NS + '/lobby/+', { qos: 1 }); } catch (_) {}
+  if (bi === S.primary && S.roomId && S.pwHash) {
+    try { b.client.subscribe([T.ctrl(S.roomId, S.pwHash), T.msg(S.roomId, S.pwHash)], { qos: 1 }); } catch (_) {}
+    S.lastHostTs = Date.now();
     if (S.isHost) publishLobby();
-    else S.lastHostTs = Date.now();
+    else publishCtrl({ k: 'hello' }, 0);   // 断线重连后重新敲门，确认房主还在
   }
 }
 
-function subscribe(topics) {
-  return new Promise(resolve => {
-    if (!S.client || !S.connected) return resolve(false);
-    let done = false;
-    const fin = v => { if (!done) { done = true; resolve(v); } };
-    setTimeout(() => fin(false), 6000);
-    S.client.subscribe(topics, { qos: 1 }, (err) => fin(!err));
-  });
-}
-
 function ensureConnected() {
-  if (S.connected) return Promise.resolve(true);
+  if (S.brokers[S.primary] && S.brokers[S.primary].connected) return Promise.resolve(true);
   return new Promise(resolve => {
     S.waiters.push(resolve);
-    setTimeout(() => resolve(S.connected), 11000);
-    if (!S.connecting && !S.client) connect();
+    setTimeout(() => resolve(!!(S.brokers[S.primary] && S.brokers[S.primary].connected)), 12000);
   });
+}
+function flushWaiters() {
+  const primOk = !!(S.brokers[S.primary] && S.brokers[S.primary].connected);
+  S.waiters.splice(0).forEach(fn => fn(primOk));
+}
+
+function primaryClient() {
+  const b = S.brokers[S.primary];
+  return b && b.connected ? b.client : null;
 }
 
 /* ================= 收消息 ================= */
-function onMessage(topic, buf) {
+function onMessage(bi, topic, buf) {
   const text = buf ? buf.toString() : '';
 
   if (topic.startsWith(NS + '/lobby/')) {
-    const rid = topic.slice((NS + '/lobby/').length);
+    const rid = topic.slice(NS.length + 7);
     if (!text) {
-      S.lobby.delete(rid);
-      renderLobby();
+      if (S.lobby.delete(rid)) renderLobby();
       return;
     }
     let o; try { o = JSON.parse(text); } catch (_) { return; }
     if (o && o.r === rid) {
-      S.lobby.set(rid, o);
-      // 自愈：房主非正常退出会留下 retained 幽灵条目，看到即顺手清掉（房主若真活着，4 秒内会重发）
-      if (Date.now() - (o.t || 0) > LOBBY_TTL_MS && S.client && S.connected) {
-        try { S.client.publish(topic, '', { retain: true, qos: 0 }); } catch (_) {}
-        S.lobby.delete(rid);
-      }
+      o._b = (typeof o.b === 'number' && S.brokers[o.b]) ? o.b : bi;   // 记住房主在哪条通道
+      o._ts = Date.now();                                               // 新鲜度用本地时钟，免疫双方时钟偏差
+      const cur = S.lobby.get(rid);
+      if (!cur || (o.t || 0) >= (cur.t || 0)) S.lobby.set(rid, o);
       renderLobby();
     }
     return;
   }
 
-  if (!S.roomId || !text) return;
+  if (!S.roomId || !text || bi !== S.primary) return;
 
   if (topic.endsWith('/c') || topic.endsWith('/m')) {
     // 解密是异步的，排队保序，防止消息乱序渲染
@@ -346,26 +348,32 @@ function onChat(o) {
 
 /* ================= 发消息（房间内全部走密文） ================= */
 async function publishCtrl(o, qos = 0) {
-  if (!S.client || !S.connected || !S.roomId) return;
+  const c = primaryClient();
+  if (!c || !S.roomId) return;
   const topic = T.ctrl(S.roomId, S.pwHash);   // await 期间状态可能被清空，先锁定频道
   const payload = Object.assign({
     r: S.roomId, f: S.me.id, n: S.me.name, a: S.me.avatar, t: Date.now(),
   }, o);
   const body = await encJSON(payload);
-  try { S.client.publish(topic, body, { qos }); } catch (_) {}
+  try { c.publish(topic, body, { qos }); } catch (_) {}
 }
 
+/* 大厅条目广播到所有通道，并标注自己所在的通道号 */
 function publishLobby() {
-  if (!S.isHost || !S.roomId || !S.client || !S.connected) return;
+  if (!S.isHost || !S.roomId) return;
   const now = Date.now();
   const alive = [...S.members.values()].filter(m => now - m.ts < MEMBER_TTL_MS).length;
-  const payload = JSON.stringify({ r: S.roomId, n: S.roomName, h: S.me.name, c: Math.max(alive, 1), t: now });
-  try { S.client.publish(T.lobby(S.roomId), payload, { qos: 0, retain: true }); } catch (_) {}
+  const payload = JSON.stringify({ r: S.roomId, n: S.roomName, h: S.me.name, c: Math.max(alive, 1), t: now, b: S.primary });
+  for (const b of S.brokers) {
+    if (!b.connected) continue;
+    try { b.client.publish(T.lobby(S.roomId), payload, { qos: 0, retain: true }); } catch (_) {}
+  }
 }
 
 async function sendMessage(text) {
   if (!S.roomId) return;
-  if (!S.connected) { toast('云路未通，消息发不出去'); return; }
+  const c = primaryClient();
+  if (!c) { toast('云路未通，消息发不出去'); return; }
   const topic = T.msg(S.roomId, S.pwHash);    // 同上，先锁定频道
   const payload = {
     r: S.roomId, i: S.me.id + ':' + (++S.seq), f: S.me.id,
@@ -373,7 +381,7 @@ async function sendMessage(text) {
   };
   try {
     const body = await encJSON(payload);
-    S.client.publish(topic, body, { qos: 1 });
+    c.publish(topic, body, { qos: 1 });
   } catch (_) {
     toast('发送失败');
     return;
@@ -402,7 +410,7 @@ async function enterRoom(rid, name, pass, isHost) {
   $('#roomSub').textContent = `${isHost ? '你是房主 · 离开即散场' : '凭口令进入'} · 房号 ${rid}`;
   show('room');
 
-  const granted = await subscribe([T.ctrl(rid, pwHash), T.msg(rid, pwHash)]);
+  const granted = await subscribeRoomTopics();
   if (!granted) {
     toast('频道订阅失败，换个网络再试');
     hardLeave(false);
@@ -436,7 +444,7 @@ async function enterRoom(rid, name, pass, isHost) {
   await publishCtrl({ k: 'hello' }, 1);
   const okHere = await waitHere(JOIN_WAIT_MS);
   if (!okHere) {
-    try { S.client.unsubscribe([T.ctrl(rid, pwHash), T.msg(rid, pwHash)]); } catch (_) {}
+    try { primaryClient() && primaryClient().unsubscribe([T.ctrl(rid, pwHash), T.msg(rid, pwHash)]); } catch (_) {}
     hardLeave(false);
     show('lobby');
     toast('口令不对，或这间会客厅已散场', 3000);
@@ -448,6 +456,17 @@ async function enterRoom(rid, name, pass, isHost) {
   await publishCtrl({ k: 'join' }, 1);
   pushSys(`凭口令入席 · 房号 ${rid}`);
   return true;
+}
+
+function subscribeRoomTopics() {
+  return new Promise(resolve => {
+    const b = S.brokers[S.primary];
+    if (!b || !b.connected) return resolve(false);
+    let done = false;
+    const fin = v => { if (!done) { done = true; resolve(v); } };
+    setTimeout(() => fin(false), 6000);
+    b.client.subscribe([T.ctrl(S.roomId, S.pwHash), T.msg(S.roomId, S.pwHash)], { qos: 1 }, (err) => fin(!err));
+  });
 }
 
 function waitHere(ms) {
@@ -468,17 +487,17 @@ function waitHere(ms) {
 function hardLeave(notify) {
   if (!S.roomId) return;
   const rid = S.roomId;
-  if (notify && S.client && S.connected) {
+  if (notify) {
     if (S.isHost) {
       publishCtrl({ k: 'bye' }, 1);
-      try { S.client.publish(T.lobby(rid), '', { retain: true, qos: 0 }); } catch (_) {}
-      S.lobby.delete(rid);
+      clearLobbyEntry(rid);
     } else {
       publishCtrl({ k: 'leave' }, 1);
     }
   }
-  if (S.client && S.connected) {
-    try { S.client.unsubscribe([T.ctrl(rid, S.pwHash), T.msg(rid, S.pwHash)]); } catch (_) {}
+  const c = primaryClient();
+  if (c) {
+    try { c.unsubscribe([T.ctrl(rid, S.pwHash), T.msg(rid, S.pwHash)]); } catch (_) {}
   }
   clearInterval(S.hbTimer); S.hbTimer = null;
   clearInterval(S.tickTimer); S.tickTimer = null;
@@ -487,6 +506,15 @@ function hardLeave(notify) {
   S.aesKey = null; S.cacheBye = null; S.cacheLeave = null;
   S.decQueue = Promise.resolve();
   $('#chat').innerHTML = '';
+}
+
+/* 清掉大厅 retained 条目：所有通道一起清 */
+function clearLobbyEntry(rid) {
+  S.lobby.delete(rid);
+  for (const b of S.brokers) {
+    if (!b.connected) continue;
+    try { b.client.publish(T.lobby(rid), '', { retain: true, qos: 0 }); } catch (_) {}
+  }
 }
 
 function leaveToLobby(notify) {
@@ -521,26 +549,36 @@ function heartbeat() {
 }
 
 function tick() {
-  if (!S.roomId) return;
   const now = Date.now();
 
-  let dirty = false;
-  for (const [id, m] of S.members) {
-    if (id === S.me.id) continue;
-    if (now - m.ts > MEMBER_TTL_MS) { S.members.delete(id); dirty = true; }
-  }
-  if (dirty) renderMembers();
+  if (S.roomId) {
+    let dirty = false;
+    for (const [id, m] of S.members) {
+      if (id === S.me.id) continue;
+      if (now - m.ts > MEMBER_TTL_MS) { S.members.delete(id); dirty = true; }
+    }
+    if (dirty) renderMembers();
 
-  if (!S.isHost && now - S.lastHostTs > HOST_TIMEOUT_MS) {
-    kicked('房主已失联，会客厅散场');
-    return;
+    if (!S.isHost && now - S.lastHostTs > HOST_TIMEOUT_MS) {
+      kicked('房主已失联，会客厅散场');
+      return;
+    }
   }
 
-  const before = S.lobby.size;
-  for (const [rid, v] of S.lobby) {
-    if (now - (v.t || 0) > LOBBY_TTL_MS) S.lobby.delete(rid);
+  // 大厅：过期条目清掉（自愈），顺便清理通道上的 retained 幽灵
+  let changed = false;
+  for (const [rid, v] of [...S.lobby]) {
+    if (now - (v._ts || 0) > LOBBY_STALE_MS) {
+      S.lobby.delete(rid);
+      for (const b of S.brokers) {
+        if (!b.connected) continue;
+        try { b.client.publish(T.lobby(rid), '', { retain: true, qos: 0 }); } catch (_) {}
+      }
+      changed = true;
+    }
   }
-  if (S.lobby.size !== before) renderLobby();
+  if (changed) renderLobby();
+  else if (S._lobbyForceRender) { S._lobbyForceRender = false; renderLobby(); }
 }
 
 /* ================= 渲染 ================= */
@@ -604,18 +642,23 @@ function addBubble(m) {
 
 function renderLobby() {
   const now = Date.now();
+  const anyConn = S.brokers.some(b => b.connected);
   const rooms = [...S.lobby.values()]
-    .filter(r => r && r.r && now - (r.t || 0) < LOBBY_TTL_MS)
+    .filter(r => r && r.r && now - (r._ts || 0) < LOBBY_STALE_MS)
     .sort((a, b) => (b.t || 0) - (a.t || 0));
 
   if ($('#lobbyCnt')) $('#lobbyCnt').textContent = rooms.length;
   if ($('#roomCnt')) $('#roomCnt').textContent = rooms.length + ' 间';
 
-  const sig = rooms.map(r => r.r + r.n + r.h + r.c).join('|');
+  const sig = (anyConn ? '1' : '0') + '|' + rooms.map(r => r.r + r.n + r.h + r.c + (r._b || 0)).join('|');
   if (sig === S._lsig) return;
   S._lsig = sig;
 
   const el = $('#roomList');
+  if (!anyConn) {
+    el.innerHTML = `<div class="empty"><div class="big">🌫️</div>云路未通，暂时看不见任何会客厅<br><span class="tiny">正在自动重连多条云路…（顶部有状态）</span></div>`;
+    return;
+  }
   if (!rooms.length) {
     el.innerHTML = `<div class="empty"><div class="big">🍃</div>云海空空，一间会客厅都没有<br><span class="tiny">做第一个开辟的人吧</span></div>`;
     return;
@@ -643,7 +686,7 @@ function bindIdentityUI() {
     applyIdentity();
     show('lobby');
     renderLobby();
-    if (!S.connected) ensureConnected();
+    if (!S.brokers.some(b => b.connected)) ensureConnected();
   };
   $('#btnLogout').onclick = () => {
     if (S.roomId) hardLeave(true);
@@ -656,7 +699,7 @@ function bindIdentityUI() {
 
 function bindLobbyUI() {
   $('#btnOpenCreate').onclick = () => {
-    if (!S.connected) toast('云路还在连，稍等一下');
+    if (!S.brokers[S.primary] || !S.brokers[S.primary].connected) toast('云路还在连，稍等一下');
     $('#createName').value = '';
     $('#createPass').value = '';
     $('#maskCreate').classList.add('on');
@@ -693,6 +736,12 @@ function bindLobbyUI() {
     const rid = card.dataset.id;
     const r = S.lobby.get(rid);
     if (!r) return toast('这间会客厅刚刚散场了');
+    // 房主在别的通道上 → 先切过去再敲门（大厅是全通道广播的，房间不是）
+    if (r._b !== S.primary && !S.roomId) {
+      const b = S.brokers[r._b];
+      if (!b || !b.connected) return toast('房主所在的云路暂时连不上，稍后再试');
+      S.primary = r._b;
+    }
     S.pendingJoin = { rid, name: r.n };
     $('#joinRoomName').textContent = r.n;
     $('#joinPass').value = '';
@@ -720,20 +769,20 @@ function bindRoomUI() {
   });
 
   window.addEventListener('pagehide', () => {
-    if (!S.roomId || !S.client || !S.connected) return;
+    if (!S.roomId) return;
+    const b = S.brokers[S.primary];
+    if (!b || !b.connected) return;
     const cache = S.isHost ? S.cacheBye : S.cacheLeave;
     if (cache) {
       // 用预先加密好的包同步发出，关页前一定来得及
-      try { S.client.publish(T.ctrl(S.roomId, S.pwHash), cache, { qos: 0 }); } catch (_) {}
+      try { b.client.publish(T.ctrl(S.roomId, S.pwHash), cache, { qos: 0 }); } catch (_) {}
     } else {
       publishCtrl({ k: S.isHost ? 'bye' : 'leave' }, 0);
     }
-    if (S.isHost) {
-      try { S.client.publish(T.lobby(S.roomId), '', { retain: true, qos: 0 }); } catch (_) {}
-    }
+    if (S.isHost) clearLobbyEntry(S.roomId);
   });
 
-  window.addEventListener('online', () => { if (!S.connected) nextBroker(); });
+  window.addEventListener('online', () => { S.brokers.forEach((_, i) => { if (!S.brokers[i].connected) scheduleRetry(i); }); });
 }
 
 /* ================= 启动 ================= */
@@ -750,6 +799,9 @@ function bindRoomUI() {
   } else {
     newIdentity();
   }
-  setConn('wait');
-  connect();
+
+  S.brokers = BROKERS.map(url => ({ url, client: null, connected: false, connecting: false, retryTimer: null }));
+  setConn();
+  renderLobby();
+  S.brokers.forEach((_, i) => connectBroker(i));
 })();
