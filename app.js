@@ -3,7 +3,9 @@
    云端会客厅 · 纯静态版
    无服务端：房间与消息全部走公共 MQTT over WebSocket。
    - 口令不落任何存储，只用来派生私有频道名（hash 后 16 位）
-   - 大厅 = 房主定时重发的 retained 消息（房主一走就清空）
+   - 房间内所有消息 AES-256-GCM 端到端加密，密钥 = 房号+口令派生，
+     只存在于成员浏览器内存里，broker 与旁听者看到的全是密文
+   - 大厅 = 房主定时重发的 retained 消息（房主一走就清空，仅含房间名不含口令）
    - 聊天记录不 retain，晚进来的人天然看不到旧消息
    ===================================================================== */
 
@@ -51,6 +53,10 @@ const S = {
   pendingHere: null,
   pendingJoin: null,
   seq: 0,
+  aesKey: null,       // 房间 AES-GCM 密钥（房号+口令派生，只在本页内存）
+  cacheBye: null,     // 关页时同步发出的预加密告别包
+  cacheLeave: null,
+  decQueue: Promise.resolve(),
   _msig: '',
   _lsig: '',
 };
@@ -113,6 +119,42 @@ async function pwhash(rid, pass) {
     h2 = (h2 + raw.charCodeAt(i) * (i + 7)) * 0x85ebca6b >>> 0;
   }
   return (h1.toString(16) + h2.toString(16)).padEnd(16, '0').slice(0, 16);
+}
+
+/* ---------- 端到端加密（AES-256-GCM） ---------- */
+function b64(u8) { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); }
+function unb64(str) { const b = atob(str), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+
+/* 房间密钥与频道哈希域分离，即便频道名公开也无法推回密钥 */
+async function deriveRoomKey(rid, pass) {
+  try {
+    if (!crypto || !crypto.subtle) return null;
+    const seed = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${rid}|${pass}|aes|${NS}`));
+    return await crypto.subtle.importKey('raw', seed, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  } catch (_) { return null; }
+}
+
+/* 有密钥则加密为 {iv,d}，无密钥（非安全上下文）退化为明文 */
+async function encJSON(o) {
+  if (!S.aesKey) return JSON.stringify(o);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, S.aesKey, new TextEncoder().encode(JSON.stringify(o)));
+  return JSON.stringify({ iv: b64(iv), d: b64(new Uint8Array(ct)) });
+}
+
+/* 收包：优先解密；解不开再按明文兜底（兼容无加密能力的发送方）；都失败返回 null */
+async function decPayload(text) {
+  if (S.aesKey) {
+    try {
+      const w = JSON.parse(text);
+      if (w && typeof w === 'object' && 'iv' in w && 'd' in w) {
+        const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(w.iv) }, S.aesKey, unb64(w.d));
+        return JSON.parse(new TextDecoder().decode(pt));
+      }
+      return w;
+    } catch (_) { return null; }
+  }
+  try { return JSON.parse(text); } catch (_) { return null; }
 }
 
 /* ================= 连接 ================= */
@@ -252,11 +294,17 @@ function onMessage(topic, buf) {
   }
 
   if (!S.roomId || !text) return;
-  let o; try { o = JSON.parse(text); } catch (_) { return; }
-  if (!o || o.r !== S.roomId) return;
 
-  if (topic.endsWith('/c')) onCtrl(o);
-  else if (topic.endsWith('/m')) onChat(o);
+  if (topic.endsWith('/c') || topic.endsWith('/m')) {
+    // 解密是异步的，排队保序，防止消息乱序渲染
+    S.decQueue = S.decQueue.then(async () => {
+      const o = await decPayload(text);
+      if (!o || !S.roomId || o.r !== S.roomId) return;
+      if (topic.endsWith('/c')) onCtrl(o);
+      else onChat(o);
+    }).catch(() => {});
+    return;
+  }
 }
 
 function onCtrl(o) {
@@ -296,13 +344,15 @@ function onChat(o) {
   addBubble({ name: o.n || '客', avatar: o.a || AVATARS[0], text: o.x, self: false });
 }
 
-/* ================= 发消息 ================= */
-function publishCtrl(o, qos = 0) {
+/* ================= 发消息（房间内全部走密文） ================= */
+async function publishCtrl(o, qos = 0) {
   if (!S.client || !S.connected || !S.roomId) return;
+  const topic = T.ctrl(S.roomId, S.pwHash);   // await 期间状态可能被清空，先锁定频道
   const payload = Object.assign({
     r: S.roomId, f: S.me.id, n: S.me.name, a: S.me.avatar, t: Date.now(),
   }, o);
-  try { S.client.publish(T.ctrl(S.roomId, S.pwHash), JSON.stringify(payload), { qos }); } catch (_) {}
+  const body = await encJSON(payload);
+  try { S.client.publish(topic, body, { qos }); } catch (_) {}
 }
 
 function publishLobby() {
@@ -313,14 +363,18 @@ function publishLobby() {
   try { S.client.publish(T.lobby(S.roomId), payload, { qos: 0, retain: true }); } catch (_) {}
 }
 
-function sendMessage(text) {
+async function sendMessage(text) {
   if (!S.roomId) return;
   if (!S.connected) { toast('云路未通，消息发不出去'); return; }
+  const topic = T.msg(S.roomId, S.pwHash);    // 同上，先锁定频道
   const payload = {
     r: S.roomId, i: S.me.id + ':' + (++S.seq), f: S.me.id,
     n: S.me.name, a: S.me.avatar, x: text, t: Date.now(),
   };
-  try { S.client.publish(T.msg(S.roomId, S.pwHash), JSON.stringify(payload), { qos: 1 }); } catch (_) {
+  try {
+    const body = await encJSON(payload);
+    S.client.publish(topic, body, { qos: 1 });
+  } catch (_) {
     toast('发送失败');
     return;
   }
@@ -328,8 +382,10 @@ function sendMessage(text) {
 }
 
 /* ================= 房间生命周期 ================= */
-async function enterRoom(rid, name, pwHash, isHost) {
+async function enterRoom(rid, name, pass, isHost) {
   if (S.roomId) hardLeave(false);
+  const pwHash = await pwhash(rid, pass);
+  S.aesKey = await deriveRoomKey(rid, pass);   // 同一口令，独立派生加密密钥
   const ok = await ensureConnected();
   if (!ok) { toast('云路未通，稍后再试'); return false; }
 
@@ -358,16 +414,26 @@ async function enterRoom(rid, name, pwHash, isHost) {
   const self = { id: S.me.id, n: S.me.name, a: S.me.avatar, h: isHost ? 1 : 0, ts: Date.now() };
   S.members.set(S.me.id, self);
 
+  // 预加密关页用的告别包：pagehide 里只能同步发送，来不及等异步加密
+  if (S.aesKey) {
+    const wrap = o => encJSON(Object.assign({ r: rid, f: S.me.id, n: S.me.name, t: Date.now() }, o));
+    S.cacheBye = await wrap({ k: 'bye' });
+    S.cacheLeave = await wrap({ k: 'leave' });
+  } else {
+    S.cacheBye = null;
+    S.cacheLeave = null;
+  }
+
   if (isHost) {
     renderMembers();
     publishLobby();
-    publishCtrl({ k: 'join', h: 1 }, 1);
+    await publishCtrl({ k: 'join', h: 1 }, 1);
     pushSys(`会客厅已开辟 · 房号 ${rid}，把房号与口令告诉朋友`);
     return true;
   }
 
   // 敲门：房主收到 hello 才会回 here，以此校验口令（口令错 → 频道不同 → 无人应答）
-  publishCtrl({ k: 'hello' }, 1);
+  await publishCtrl({ k: 'hello' }, 1);
   const okHere = await waitHere(JOIN_WAIT_MS);
   if (!okHere) {
     try { S.client.unsubscribe([T.ctrl(rid, pwHash), T.msg(rid, pwHash)]); } catch (_) {}
@@ -379,7 +445,7 @@ async function enterRoom(rid, name, pwHash, isHost) {
 
   S.lastHostTs = Date.now();
   renderMembers();
-  publishCtrl({ k: 'join' }, 1);
+  await publishCtrl({ k: 'join' }, 1);
   pushSys(`凭口令入席 · 房号 ${rid}`);
   return true;
 }
@@ -418,6 +484,8 @@ function hardLeave(notify) {
   clearInterval(S.tickTimer); S.tickTimer = null;
   S.roomId = null; S.roomName = ''; S.pwHash = ''; S.isHost = false;
   S.members.clear(); S._msig = ''; S.pendingHere = null;
+  S.aesKey = null; S.cacheBye = null; S.cacheLeave = null;
+  S.decQueue = Promise.resolve();
   $('#chat').innerHTML = '';
 }
 
@@ -606,8 +674,7 @@ function bindLobbyUI() {
     let rid;
     do { rid = rand(6); } while (S.lobby.has(rid));
 
-    const h = await pwhash(rid, pass);
-    const ok = await enterRoom(rid, name, h, true);
+    const ok = await enterRoom(rid, name, pass, true);
     if (ok) $('#maskCreate').classList.remove('on');
   };
 
@@ -616,8 +683,7 @@ function bindLobbyUI() {
     if (!pass) return toast('请输入口令');
     const pj = S.pendingJoin;
     if (!pj) return;
-    const h = await pwhash(pj.rid, pass);
-    const ok = await enterRoom(pj.rid, pj.name, h, false);
+    const ok = await enterRoom(pj.rid, pj.name, pass, false);
     if (ok) $('#maskJoin').classList.remove('on');
   };
 
@@ -655,11 +721,15 @@ function bindRoomUI() {
 
   window.addEventListener('pagehide', () => {
     if (!S.roomId || !S.client || !S.connected) return;
-    if (S.isHost) {
-      publishCtrl({ k: 'bye' }, 0);
-      try { S.client.publish(T.lobby(S.roomId), '', { retain: true, qos: 0 }); } catch (_) {}
+    const cache = S.isHost ? S.cacheBye : S.cacheLeave;
+    if (cache) {
+      // 用预先加密好的包同步发出，关页前一定来得及
+      try { S.client.publish(T.ctrl(S.roomId, S.pwHash), cache, { qos: 0 }); } catch (_) {}
     } else {
-      publishCtrl({ k: 'leave' }, 0);
+      publishCtrl({ k: S.isHost ? 'bye' : 'leave' }, 0);
+    }
+    if (S.isHost) {
+      try { S.client.publish(T.lobby(S.roomId), '', { retain: true, qos: 0 }); } catch (_) {}
     }
   });
 
