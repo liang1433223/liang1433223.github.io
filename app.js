@@ -239,7 +239,15 @@ function onMessage(topic, buf) {
       return;
     }
     let o; try { o = JSON.parse(text); } catch (_) { return; }
-    if (o && o.r === rid) { S.lobby.set(rid, o); renderLobby(); }
+    if (o && o.r === rid) {
+      S.lobby.set(rid, o);
+      // 自愈：房主非正常退出会留下 retained 幽灵条目，看到即顺手清掉（房主若真活着，4 秒内会重发）
+      if (Date.now() - (o.t || 0) > LOBBY_TTL_MS && S.client && S.connected) {
+        try { S.client.publish(topic, '', { retain: true, qos: 0 }); } catch (_) {}
+        S.lobby.delete(rid);
+      }
+      renderLobby();
+    }
     return;
   }
 
