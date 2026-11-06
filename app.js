@@ -517,10 +517,41 @@ function clearLobbyEntry(rid) {
   }
 }
 
+/* 页面内确认框（原生 confirm 在 WebView/iframe 里会被静默屏蔽，返回 false） */
+function uiConfirm(title, text, okText, cancelText) {
+  return new Promise(resolve => {
+    const mask = $('#maskConfirm');
+    $('#confirmTitle').textContent = title;
+    $('#confirmText').textContent = text;
+    $('#btnConfirmOk').textContent = okText || '确定';
+    $('#btnConfirmCancel').textContent = cancelText || '取消';
+    mask.classList.add('on');
+    const done = v => {
+      mask.classList.remove('on');
+      $('#btnConfirmOk').onclick = null;
+      $('#btnConfirmCancel').onclick = null;
+      mask.onclick = null;
+      resolve(v);
+    };
+    $('#btnConfirmOk').onclick = () => done(true);
+    $('#btnConfirmCancel').onclick = () => done(false);
+    mask.onclick = e => { if (e.target === mask) done(false); };
+  });
+}
+
 function leaveToLobby(notify) {
+  doLeave(notify);
+}
+
+async function doLeave(notify) {
   if (!S.roomId) return;
   const wasHost = S.isHost;
-  if (wasHost && notify && !confirm('你是房主 —— 你一走，会客厅立即散场，所有人都得离开。确定？')) return;
+  if (wasHost && notify) {
+    const ok = await uiConfirm('确认离开？',
+      '你是房主 —— 你一走，会客厅立即散场，所有人都得离开。',
+      '确定离开', '先留一会儿');
+    if (!ok || !S.roomId) return;   // 等待期间可能已被踢出/散场
+  }
   hardLeave(notify);
   show('lobby');
   renderLobby();
