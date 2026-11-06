@@ -322,6 +322,18 @@ header.bar{
   </div>
 </div>
 
+<!-- 房主离开确认弹窗（不用原生 confirm，WebView 里会被静默屏蔽） -->
+<div class="mask" id="maskConfirm">
+  <div class="modal">
+    <h3 id="confirmTitle">确认离开？</h3>
+    <div class="muted" id="confirmText">你是房主 —— 你一走，会客厅立即散场，所有人都得离开。</div>
+    <div class="row">
+      <button class="btn ghost" id="btnConfirmCancel">先留一会儿</button>
+      <button class="btn gold" id="btnConfirmOk">确定离开</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="vendor/mqtt.min.js"></script>
