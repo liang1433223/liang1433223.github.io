@@ -2,295 +2,328 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>阿狸 · 计算机视觉 / 深度学习</title>
-<meta name="description" content="阿狸的个人主页 —— 计算机视觉与深度学习方向的开发者，开源项目与作品集。">
-<meta name="theme-color" content="#fbfbfd">
-<meta property="og:title" content="阿狸 · 计算机视觉 / 深度学习">
-<meta property="og:description" content="复现、调优、落地：计算机视觉方向的开源项目与笔记。">
-<meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>🦊</text></svg>">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>云端会客厅 · 临时聊天室</title>
+<meta name="description" content="一念聚散的云端聊天室：临时身份、口令入房、房主离开即散场。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>⛩️</text></svg>">
 <style>
-  :root{
-    --bg:#fbfbfd;
-    --card:#ffffff;
-    --ink:#14161a;
-    --ink-2:#4a4f59;
-    --ink-3:#8a8f9a;
-    --line:#e8e9ee;
-    --accent:#0f766e;
-    --accent-2:#0284c7;
-    --accent-soft:#e6f4f1;
-    --radius:18px;
-    --shadow:0 1px 2px rgba(16,18,28,.04), 0 8px 24px -12px rgba(16,18,28,.14);
-    --shadow-hover:0 2px 4px rgba(16,18,28,.05), 0 18px 40px -18px rgba(15,118,110,.35);
-  }
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg:#0e1014; --card:#16181e; --ink:#f2f3f7; --ink-2:#b6bac4; --ink-3:#7d838f;
-      --line:#252932; --accent:#2dd4bf; --accent-2:#38bdf8; --accent-soft:#132322;
-      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
-      --shadow-hover:0 2px 4px rgba(0,0,0,.5), 0 18px 40px -18px rgba(45,212,191,.28);
-    }
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{
-    margin:0;background:var(--bg);color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
-    line-height:1.65;-webkit-font-smoothing:antialiased;overflow-x:hidden;
-  }
-  .glow{position:fixed;border-radius:50%;filter:blur(90px);opacity:.48;pointer-events:none;z-index:0}
-  .glow.a{width:520px;height:520px;background:#b9ece4;top:-240px;left:-170px}
-  .glow.b{width:440px;height:440px;background:#c7e5ff;top:140px;right:-190px;opacity:.4}
-  @media (prefers-color-scheme: dark){
-    .glow.a{background:#123f3a;opacity:.6}
-    .glow.b{background:#0d2f45;opacity:.55}
-  }
-  .wrap{position:relative;z-index:1;max-width:860px;margin:0 auto;padding:0 24px}
+:root{
+  --bg:#0a0d18; --bg2:#111627; --card:#161c30; --card2:#1c2440;
+  --line:#2a3352; --ink:#eef1fb; --ink2:#a7b0cc; --ink3:#6b7699;
+  --gold:#e3b45c; --gold2:#f3d089; --red:#d85040; --teal:#3fbfae;
+  --radius:16px;
+  --shadow:0 10px 30px -12px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  background:
+    radial-gradient(1100px 600px at 85% -10%, rgba(224,120,70,.14), transparent 60%),
+    radial-gradient(900px 500px at 10% 0%, rgba(120,140,255,.12), transparent 55%),
+    var(--bg);
+  color:var(--ink);line-height:1.6;min-height:100dvh;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:url("assets/monkey.jpg");
+  background-size:cover;background-position:center top;opacity:.10;filter:saturate(1.1);
+}
+#app{position:relative;z-index:1;min-height:100dvh;display:flex;flex-direction:column}
 
-  header{padding:92px 0 52px}
-  .avatar{
-    width:74px;height:74px;border-radius:23px;display:grid;place-items:center;font-size:34px;
-    background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);margin-bottom:24px;
-  }
-  .eyebrow{
-    display:inline-flex;align-items:center;gap:7px;font-size:12.5px;letter-spacing:.04em;
-    color:var(--accent);background:var(--accent-soft);
-    border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);
-    padding:5px 12px;border-radius:999px;margin-bottom:18px;font-weight:600;
-  }
-  .dot-live{width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 2s ease-in-out infinite}
-  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.82)}}
-  h1{font-size:clamp(33px,5.6vw,50px);line-height:1.16;margin:0 0 18px;letter-spacing:-.02em;font-weight:750}
-  h1 .grad{
-    background:linear-gradient(100deg,#0f766e,#0284c7 60%,#6d28d9);
-    -webkit-background-clip:text;background-clip:text;color:transparent;
-  }
-  .lede{font-size:17px;color:var(--ink-2);max-width:640px;margin:0 0 30px}
-  .lede strong{color:var(--ink);font-weight:600}
+/* ============ 通用 ============ */
+.view{display:none;flex:1;flex-direction:column}
+.view.on{display:flex}
+.wrap{width:100%;max-width:760px;margin:0 auto;padding:0 20px}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:12px 22px;border-radius:13px;border:1px solid transparent;cursor:pointer;
+  font-size:15px;font-weight:650;font-family:inherit;transition:.2s ease;color:var(--ink);
+  background:var(--card2);border-color:var(--line);
+}
+.btn:hover{transform:translateY(-2px)}
+.btn.gold{background:linear-gradient(180deg,#f0c060,#d99f3a);color:#2b1a05;border-color:#b98830;box-shadow:0 8px 24px -10px rgba(227,180,92,.6)}
+.btn.gold:hover{box-shadow:0 12px 30px -10px rgba(227,180,92,.8)}
+.btn.red{background:linear-gradient(180deg,#e05a48,#c23b2e);color:#fff;border-color:#a53024}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.input{
+  width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);
+  background:rgba(10,14,26,.75);color:var(--ink);font-size:15px;font-family:inherit;outline:none;transition:.2s;
+}
+.input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(227,180,92,.15)}
+.input::placeholder{color:var(--ink3)}
+.title{font-weight:750;letter-spacing:.02em}
+.muted{color:var(--ink2);font-size:13.5px}
+.tiny{color:var(--ink3);font-size:12px}
 
-  .actions{display:flex;flex-wrap:wrap;gap:12px}
-  .btn{
-    display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;
-    font-size:14.5px;font-weight:600;text-decoration:none;border:1px solid transparent;transition:.22s ease;
-  }
-  .btn.primary{background:var(--ink);color:var(--bg);box-shadow:var(--shadow)}
-  .btn.primary:hover{transform:translateY(-2px);box-shadow:var(--shadow-hover)}
-  .btn.ghost{background:var(--card);color:var(--ink);border-color:var(--line);box-shadow:var(--shadow)}
-  .btn.ghost:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent) 38%,var(--line))}
-  .btn svg{width:16px;height:16px;fill:currentColor}
+/* ============ 入场 ============ */
+#view-enter{align-items:center;justify-content:center;padding:40px 20px}
+.enter-card{
+  width:100%;max-width:420px;background:linear-gradient(180deg,rgba(28,36,64,.92),rgba(16,20,38,.92));
+  border:1px solid var(--line);border-radius:22px;padding:34px 30px;text-align:center;
+  box-shadow:var(--shadow);backdrop-filter:blur(8px);
+}
+.avatar-big{
+  width:108px;height:108px;border-radius:50%;overflow:hidden;margin:0 auto 6px;
+  border:3px solid var(--gold);box-shadow:0 0 0 6px rgba(227,180,92,.15),0 14px 34px -12px rgba(0,0,0,.8);
+  position:relative;
+}
+.avatar-big img{width:100%;height:100%;object-fit:cover;object-position:center 20%;display:block}
+.id-name{font-size:26px;font-weight:800;margin-top:14px;letter-spacing:.04em}
+.id-name .accent{color:var(--gold2)}
+.enter-actions{display:flex;gap:10px;justify-content:center;margin-top:22px;flex-wrap:wrap}
+.enter-note{margin-top:20px;font-size:12.5px;color:var(--ink3);line-height:1.8}
 
-  section{padding:44px 0}
-  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:24px}
-  .sec-head h2{font-size:20px;margin:0;letter-spacing:-.01em;font-weight:700}
-  .sec-head .line{flex:1;height:1px;background:var(--line)}
-  .sec-head .idx{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;letter-spacing:.08em}
+/* ============ 大厅 ============ */
+header.bar{
+  position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);
+  background:rgba(10,13,24,.82);border-bottom:1px solid var(--line);
+}
+.bar-in{display:flex;align-items:center;gap:12px;padding:13px 20px;max-width:760px;margin:0 auto}
+.bar .me{display:flex;align-items:center;gap:9px;min-width:0}
+.bar .me img{width:34px;height:34px;border-radius:50%;object-fit:cover;object-position:center 20%;border:2px solid var(--gold)}
+.bar .me .n{font-weight:700;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+.logo{font-size:17px;font-weight:800;letter-spacing:.06em;color:var(--gold2);white-space:nowrap}
+.logo small{color:var(--ink3);font-weight:500;font-size:11px;margin-left:6px;letter-spacing:.1em}
+.spacer{flex:1}
 
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  @media (max-width:680px){.grid{grid-template-columns:1fr}}
-  .card{
-    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-    padding:22px;box-shadow:var(--shadow);transition:.25s cubic-bezier(.2,.7,.3,1);
-    display:flex;flex-direction:column;gap:10px;text-decoration:none;color:inherit;
-  }
-  .card:hover{transform:translateY(-4px);box-shadow:var(--shadow-hover);border-color:color-mix(in srgb,var(--accent) 32%,var(--line))}
-  .card .top{display:flex;align-items:center;gap:10px}
-  .card .ico{
-    width:36px;height:36px;border-radius:11px;display:grid;place-items:center;font-size:17px;flex:0 0 auto;
-    background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 16%,transparent);
-  }
-  .card h3{margin:0;font-size:15.5px;font-weight:680;letter-spacing:-.01em;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-  .card h3 .repo{font-size:12.5px;font-weight:500;color:var(--ink-3);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .card p{margin:0;font-size:13.8px;color:var(--ink-2);line-height:1.6}
-  .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:6px}
-  .tag{
-    font-size:11.5px;color:var(--ink-2);background:color-mix(in srgb,var(--ink) 5%,transparent);
-    border:1px solid var(--line);padding:3px 8px;border-radius:7px;
-  }
-  .star{font-size:11.5px;color:var(--ink-3);display:inline-flex;align-items:center;gap:3px}
+.hero{
+  border-radius:20px;overflow:hidden;position:relative;margin-top:22px;
+  border:1px solid var(--line);box-shadow:var(--shadow);
+}
+.hero-imgs{display:flex;height:150px}
+.hero-imgs .h{flex:1;position:relative;overflow:hidden}
+.hero-imgs img{width:100%;height:100%;object-fit:cover;object-position:center 18%}
+.hero-imgs .h::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 30%,rgba(10,13,24,.88))}
+.hero-cap{position:absolute;left:0;right:0;bottom:0;padding:16px 20px;z-index:2}
+.hero-cap .t{font-size:20px;font-weight:800;letter-spacing:.05em}
+.hero-cap .s{font-size:12.5px;color:var(--ink2);margin-top:2px}
 
-  .stack{display:flex;flex-direction:column;gap:15px}
-  .stack-row{display:grid;grid-template-columns:112px 1fr;gap:14px;align-items:start}
-  @media (max-width:560px){.stack-row{grid-template-columns:1fr;gap:8px}}
-  .stack-row .k{font-size:12.5px;color:var(--ink-3);letter-spacing:.05em;padding-top:5px}
-  .chips{display:flex;flex-wrap:wrap;gap:8px}
-  .chip{
-    font-size:13px;padding:6px 13px;border-radius:10px;background:var(--card);
-    border:1px solid var(--line);color:var(--ink);box-shadow:0 1px 1px rgba(16,18,28,.03);transition:.2s;
-  }
-  .chip:hover{border-color:color-mix(in srgb,var(--accent) 42%,var(--line));color:var(--accent);transform:translateY(-1px)}
+.sec{display:flex;align-items:center;gap:12px;margin:26px 0 14px}
+.sec h2{font-size:16px;letter-spacing:.03em}
+.sec .line{flex:1;height:1px;background:var(--line)}
+.sec .n{font-size:12px;color:var(--ink3)}
 
-  .about{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px;box-shadow:var(--shadow);font-size:15px;color:var(--ink-2)}
-  .about p{margin:0 0 14px}
-  .about p:last-child{margin:0}
-  .about b{color:var(--ink);font-weight:640}
+.room-list{display:flex;flex-direction:column;gap:12px}
+.room-card{
+  display:flex;align-items:center;gap:14px;padding:16px 18px;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);transition:.2s;
+}
+.room-card:hover{transform:translateY(-2px);border-color:rgba(227,180,92,.45);box-shadow:var(--shadow)}
+.room-card .rname{font-weight:700;font-size:15.5px}
+.room-card .meta{font-size:12px;color:var(--ink3);margin-top:2px;display:flex;gap:10px;align-items:center}
+.room-card .lock{color:var(--gold);font-size:14px}
+.room-card .arrow{margin-left:auto;color:var(--ink3);font-size:18px}
+.pill{display:inline-flex;align-items:center;gap:4px;background:rgba(63,191,174,.12);color:var(--teal);font-size:11.5px;padding:2px 8px;border-radius:999px;border:1px solid rgba(63,191,174,.3)}
+.empty{
+  text-align:center;padding:38px 20px;border:1px dashed var(--line);border-radius:var(--radius);
+  color:var(--ink3);font-size:14px;background:rgba(22,28,48,.5);
+}
+.empty .big{font-size:30px;margin-bottom:8px}
 
-  .links{display:flex;flex-wrap:wrap;gap:10px}
-  .link{
-    display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:var(--ink);
-    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 16px;
-    font-size:14px;transition:.22s;box-shadow:0 1px 1px rgba(16,18,28,.03);
-  }
-  .link:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:color-mix(in srgb,var(--accent) 36%,var(--line))}
-  .link svg{width:16px;height:16px;fill:currentColor;opacity:.85}
+.fab-wrap{margin-top:26px}
+.fab{
+  width:100%;padding:16px;border-radius:16px;border:1px dashed rgba(227,180,92,.5);
+  background:rgba(227,180,92,.06);color:var(--gold2);font-size:15px;font-weight:700;cursor:pointer;
+  font-family:inherit;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.fab:hover{background:rgba(227,180,92,.14);transform:translateY(-2px)}
 
-  footer{
-    padding:52px 0 60px;border-top:1px solid var(--line);margin-top:38px;
-    display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;font-size:12.8px;color:var(--ink-3);
-  }
-  footer a{color:var(--ink-3);text-decoration:none}
-  footer a:hover{color:var(--accent)}
+/* ============ 房间 ============ */
+.room-head{
+  position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);
+  background:rgba(10,13,24,.85);border-bottom:1px solid var(--line);
+}
+.room-head-in{display:flex;align-items:center;gap:12px;padding:12px 16px;max-width:760px;margin:0 auto}
+.room-head .rn{font-weight:750;font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room-head .sub{font-size:11.5px;color:var(--ink3);white-space:nowrap}
+.members{display:flex;gap:6px;overflow-x:auto;padding:0 16px 10px;max-width:760px;margin:0 auto;scrollbar-width:none}
+.members::-webkit-scrollbar{display:none}
+.mchip{
+  display:flex;align-items:center;gap:6px;flex:0 0 auto;padding:4px 10px 4px 4px;border-radius:999px;
+  background:var(--card);border:1px solid var(--line);font-size:12px;
+}
+.mchip img{width:22px;height:22px;border-radius:50%;object-fit:cover;object-position:center 20%}
+.mchip .crown{font-size:11px}
+.chat{flex:1;overflow-y:auto;padding:18px 20px 8px;max-width:760px;width:100%;margin:0 auto}
+.msg{display:flex;gap:10px;margin-bottom:14px;align-items:flex-end}
+.msg .av{width:32px;height:32px;border-radius:50%;object-fit:cover;object-position:center 20%;flex:0 0 auto;border:1px solid var(--line)}
+.msg .body{max-width:72%}
+.msg .who{font-size:11.5px;color:var(--ink3);margin:0 4px 4px;display:flex;gap:6px;align-items:center}
+.msg .bubble{
+  padding:10px 14px;border-radius:16px;background:var(--card);border:1px solid var(--line);
+  font-size:14.5px;word-break:break-word;box-shadow:0 2px 8px -4px rgba(0,0,0,.5);
+}
+.msg.self{flex-direction:row-reverse}
+.msg.self .bubble{background:linear-gradient(180deg,#2a3352,#232b48);border-color:rgba(227,180,92,.35)}
+.msg.self .who{justify-content:flex-end}
+.msg.sys{justify-content:center;margin:10px 0}
+.msg.sys .bubble{
+  background:transparent;border:none;box-shadow:none;color:var(--gold);
+  font-size:12px;padding:4px 10px;letter-spacing:.05em;
+}
+.composer{
+  position:sticky;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg,transparent,rgba(10,13,24,.9) 40%);
+}
+.composer-in{display:flex;gap:10px;max-width:760px;margin:0 auto}
+.composer .input{flex:1}
+.composer .btn{padding:12px 20px}
 
-  .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s cubic-bezier(.2,.7,.3,1)}
-  .reveal.in{opacity:1;transform:none}
-  @media (prefers-reduced-motion: reduce){
-    .reveal{opacity:1;transform:none;transition:none}
-    html{scroll-behavior:auto}
-    .card:hover,.btn:hover,.link:hover,.chip:hover{transform:none}
-  }
+/* ============ 弹窗 / 提示 ============ */
+.mask{
+  position:fixed;inset:0;background:rgba(5,8,16,.72);backdrop-filter:blur(4px);
+  display:none;align-items:center;justify-content:center;z-index:50;padding:20px;
+}
+.mask.on{display:flex}
+.modal{
+  width:100%;max-width:380px;background:linear-gradient(180deg,#1c2440,#131830);
+  border:1px solid var(--line);border-radius:20px;padding:26px 24px;box-shadow:var(--shadow);
+}
+.modal h3{font-size:17px;margin-bottom:6px}
+.modal .muted{margin-bottom:16px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;color:var(--ink2);margin-bottom:6px;letter-spacing:.03em}
+.modal .row{display:flex;gap:10px;margin-top:20px}
+.modal .row .btn{flex:1}
+#toast{
+  position:fixed;left:50%;top:18px;transform:translate(-50%,-20px);z-index:99;
+  background:linear-gradient(180deg,#2a3352,#1d2440);border:1px solid rgba(227,180,92,.5);
+  color:var(--gold2);padding:10px 18px;border-radius:12px;font-size:13.5px;font-weight:600;
+  opacity:0;pointer-events:none;transition:.3s;box-shadow:var(--shadow);max-width:86vw;text-align:center;
+}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+
+@media (max-width:560px){
+  .msg .body{max-width:80%}
+  .hero-imgs{height:120px}
+  .bar .me .n{max-width:80px}
+}
 </style>
 </head>
 <body>
-<div class="glow a"></div>
-<div class="glow b"></div>
+<div id="app">
 
-<div class="wrap">
-
-  <header id="top">
-    <div class="avatar reveal">🦊</div>
-    <div class="eyebrow reveal"><span class="dot-live"></span>计算机视觉 · 深度学习</div>
-    <h1 class="reveal">你好，我是<span class="grad">阿狸</span></h1>
-    <p class="lede reveal">
-      做 <strong>计算机视觉</strong> 方向的工作：复现经典网络、清理训练数据、把模型从 Notebook 推到能跑的状态。
-      喜欢把论文里的东西真正跑起来，也喜欢写顺手的小工具省掉重复劳动。
-    </p>
-    <div class="actions reveal">
-      <a class="btn primary" href="#work">看看我的项目</a>
-      <a class="btn ghost" href="https://github.com/liang1433223" target="_blank" rel="noopener">
-        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-        GitHub
-      </a>
-    </div>
-  </header>
-
-  <section id="work">
-    <div class="sec-head reveal"><span class="idx">01</span><h2>开源项目</h2><span class="line"></span></div>
-    <div class="grid">
-
-      <a class="card reveal" href="https://github.com/liang1433223/car_classify" target="_blank" rel="noopener">
-        <div class="top"><span class="ico">🚗</span><h3>车辆车型分类<span class="repo">car_classify</span></h3></div>
-        <p>从数据到推理的完整分类流程：图像预处理、迁移学习微调、指标评估，跑通一条可复用的训练链路。</p>
-        <div class="tags"><span class="tag">Python</span><span class="tag">图像分类</span><span class="tag">迁移学习</span><span class="star">★ 2</span></div>
-      </a>
-
-      <a class="card reveal" href="https://github.com/liang1433223/paddleGAN-wechaty" target="_blank" rel="noopener">
-        <div class="top"><span class="ico">🎨</span><h3>生成模型 + 微信机器人<span class="repo">paddleGAN-wechaty</span></h3></div>
-        <p>AI 创造营作品：把 PaddleGAN 的图像生成能力接到 Wechaty 上，聊天窗口就是生成入口。</p>
-        <div class="tags"><span class="tag">PaddlePaddle</span><span class="tag">GAN</span><span class="tag">Wechaty</span><span class="star">★ 4</span></div>
-      </a>
-
-      <a class="card reveal" href="https://github.com/liang1433223/AlexNet-Prod" target="_blank" rel="noopener">
-        <div class="top"><span class="ico">🧱</span><h3>AlexNet 复现<span class="repo">AlexNet-Prod</span></h3></div>
-        <p>逐层复现 AlexNet 的结构与训练过程，配合 Notebook 记录每一步的调参和结果对比。</p>
-        <div class="tags"><span class="tag">PyTorch</span><span class="tag">CNN</span><span class="tag">Jupyter</span></div>
-      </a>
-
-      <a class="card reveal" href="https://github.com/liang1433223/unet" target="_blank" rel="noopener">
-        <div class="top"><span class="ico">🧩</span><h3>U-Net 语义分割<span class="repo">unet</span></h3></div>
-        <p>编解码结构的语义分割实践，处理像素级标注与掩码生成，验证小数据集上的收敛表现。</p>
-        <div class="tags"><span class="tag">语义分割</span><span class="tag">U-Net</span><span class="tag">掩码</span></div>
-      </a>
-
-    </div>
-
-    <a class="card reveal" href="https://github.com/liang1433223/labelme_to_VOC-COCO" target="_blank" rel="noopener" style="margin-top:16px">
-      <div class="top"><span class="ico">🔧</span><h3>标注格式转换工具<span class="repo">labelme_to_VOC-COCO</span></h3></div>
-      <p>在 labelme 的 JSON 与 VOC / COCO 之间互转，解决标注工具和训练框架格式不一致的老问题。</p>
-      <div class="tags"><span class="tag">Python</span><span class="tag">数据工程</span><span class="tag">标注流水线</span></div>
-    </a>
-  </section>
-
-  <section>
-    <div class="sec-head reveal"><span class="idx">02</span><h2>技术栈</h2><span class="line"></span></div>
-    <div class="stack reveal">
-      <div class="stack-row">
-        <span class="k">语言</span>
-        <div class="chips">
-          <span class="chip">Python</span><span class="chip">C++</span><span class="chip">Shell</span><span class="chip">SQL</span>
-        </div>
+  <!-- ============ 入场 ============ -->
+  <section class="view on" id="view-enter">
+    <div class="enter-card">
+      <div style="font-size:12px;letter-spacing:.35em;color:var(--gold);margin-bottom:18px">云 端 会 客 厅</div>
+      <div class="avatar-big"><img id="myAvatar" src="assets/monkey.jpg" alt="化身"></div>
+      <div class="id-name">化身为 · <span class="accent" id="myName">…</span></div>
+      <div class="enter-actions">
+        <button class="btn ghost" id="btnReroll">🔄 换个化身</button>
+        <button class="btn gold" id="btnEnter">入 世</button>
       </div>
-      <div class="stack-row">
-        <span class="k">深度学习</span>
-        <div class="chips">
-          <span class="chip">PyTorch</span><span class="chip">PaddlePaddle</span>
-          <span class="chip">CNN</span><span class="chip">GAN</span><span class="chip">语义分割</span>
-        </div>
-      </div>
-      <div class="stack-row">
-        <span class="k">视觉 / 数据</span>
-        <div class="chips">
-          <span class="chip">OpenCV</span><span class="chip">NumPy</span>
-          <span class="chip">Pandas</span><span class="chip">Matplotlib</span>
-        </div>
-      </div>
-      <div class="stack-row">
-        <span class="k">环境 / 工具</span>
-        <div class="chips">
-          <span class="chip">Jupyter</span><span class="chip">Linux / SSH</span>
-          <span class="chip">Conda</span><span class="chip">Docker</span><span class="chip">Git</span>
-        </div>
+      <div class="enter-note">
+        进入即领取<b style="color:var(--ink2)">临时身份</b>，关闭页面即消散。<br>
+        房间凭<b style="color:var(--ink2)">口令</b>进出 · 房主离开，房间即刻散场 · 离房后再入，旧语皆忘。
       </div>
     </div>
   </section>
 
-  <section>
-    <div class="sec-head reveal"><span class="idx">03</span><h2>关于我</h2><span class="line"></span></div>
-    <div class="about reveal">
-      <p>我是<b>阿狸</b>，做计算机视觉和深度学习。喜欢从最基础的地方开始——<b>先把经典网络复现一遍</b>，再谈改动和创新。</p>
-      <p>日常打交道最多的其实不是模型本身，而是数据：标注格式、脏数据清洗、训练集和验证集的划分。踩过的坑多了就顺手写成小工具，这也是 <b>labelme_to_VOC-COCO</b> 的由来。</p>
-      <p>目前在做模型训练与落地的相关实践。有想法、想一起做点什么，随时找我。</p>
+  <!-- ============ 大厅 ============ -->
+  <section class="view" id="view-lobby">
+    <header class="bar">
+      <div class="bar-in">
+        <span class="logo">云端会客厅<small>LOBBY</small></span>
+        <span class="pill" id="connState">○ 连接中</span>
+        <span class="spacer"></span>
+        <div class="me">
+          <img id="barAvatar" src="" alt="">
+          <span class="n" id="barName"></span>
+        </div>
+        <button class="btn ghost" id="btnLogout" style="padding:8px 14px;font-size:13px">散去身份</button>
+      </div>
+    </header>
+    <div class="wrap" style="flex:1;display:flex;flex-direction:column;padding-bottom:40px">
+      <div class="hero">
+        <div class="hero-imgs">
+          <div class="h"><img src="assets/monkey.jpg" alt=""></div>
+          <div class="h"><img src="assets/nezha.jpg" alt=""></div>
+        </div>
+        <div class="hero-cap">
+          <div class="t">一念聚，一念散</div>
+          <div class="s">房主离开即散场 · 离房再入，消息不留痕 · 此刻 <b id="lobbyCnt" style="color:var(--gold2)">0</b> 间会客厅亮着灯</div>
+        </div>
+      </div>
+
+      <div class="sec"><h2>⌘ 现有会客厅</h2><span class="line"></span><span class="n" id="roomCnt">0 间</span></div>
+      <div class="room-list" id="roomList"></div>
+
+      <div class="fab-wrap">
+        <button class="fab" id="btnOpenCreate">＋ 开辟一间新会客厅</button>
+      </div>
+      <div style="text-align:center;margin-top:18px">
+        <a href="about/" style="color:var(--ink3);font-size:12px;text-decoration:none;letter-spacing:.08em">关于作者 ›</a>
+      </div>
     </div>
   </section>
 
-  <section>
-    <div class="sec-head reveal"><span class="idx">04</span><h2>联系</h2><span class="line"></span></div>
-    <div class="links reveal">
-      <a class="link" href="https://github.com/liang1433223" target="_blank" rel="noopener">
-        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-        github.com/liang1433223
-      </a>
-      <a class="link" href="mailto:jiangxiaoli256@gmail.com">
-        <svg viewBox="0 0 16 16"><path d="M1.75 2h12.5A1.75 1.75 0 0 1 16 3.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25v-8.5A1.75 1.75 0 0 1 1.75 2Zm0 1.5a.25.25 0 0 0-.25.25v.34l6.5 3.9 6.5-3.9V3.75a.25.25 0 0 0-.25-.25H1.75Zm12.75 2.4-6.24 3.75a.75.75 0 0 1-.77 0L1.5 5.9v6.35c0 .14.11.25.25.25h12.5a.25.25 0 0 0 .25-.25V5.9Z"/></svg>
-        邮箱
-      </a>
+  <!-- ============ 房间 ============ -->
+  <section class="view" id="view-room">
+    <div class="room-head">
+      <div class="room-head-in">
+        <button class="btn ghost" id="btnLeave" style="padding:8px 13px;font-size:13px">← 离开</button>
+        <div style="min-width:0">
+          <div class="rn" id="roomName">…</div>
+          <div class="sub" id="roomSub"></div>
+        </div>
+        <span class="spacer"></span>
+        <span class="pill">🔒 口令房</span>
+      </div>
+      <div class="members" id="memberList"></div>
+    </div>
+    <div class="chat" id="chat"></div>
+    <div class="composer">
+      <div class="composer-in">
+        <input class="input" id="msgInput" maxlength="500" placeholder="说点什么…（Enter 发送）" autocomplete="off">
+        <button class="btn gold" id="btnSend">发送</button>
+      </div>
     </div>
   </section>
-
-  <footer>
-    <span>© <span id="year">2026</span> 阿狸 · 手写 HTML，托管于 GitHub Pages</span>
-    <a href="#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">回到顶部 ↑</a>
-  </footer>
-
 </div>
 
-<script>
-  document.getElementById('year').textContent = new Date().getFullYear();
+<!-- 建房弹窗 -->
+<div class="mask" id="maskCreate">
+  <div class="modal">
+    <h3>开辟新会客厅</h3>
+    <div class="muted">你将成为房主。你离开的那一刻，房间随之消散。</div>
+    <div class="field">
+      <label>房间名</label>
+      <input class="input" id="createName" maxlength="16" placeholder="如：东海论剑">
+    </div>
+    <div class="field">
+      <label>口令（4-20 位）</label>
+      <input class="input" id="createPass" maxlength="20" placeholder="凭此口令进出" autocomplete="off">
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="btnCreateCancel">取消</button>
+      <button class="btn gold" id="btnCreateOk">开辟</button>
+    </div>
+  </div>
+</div>
 
-  var items = document.querySelectorAll('.reveal');
-  if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    var io = new IntersectionObserver(function(entries){
-      entries.forEach(function(e, i){
-        if (e.isIntersecting){
-          setTimeout(function(){ e.target.classList.add('in'); }, Math.min(i * 60, 240));
-          io.unobserve(e.target);
-        }
-      });
-    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
-    items.forEach(function(el){ io.observe(el); });
-  } else {
-    items.forEach(function(el){ el.classList.add('in'); });
-  }
-</script>
+<!-- 进房口令弹窗 -->
+<div class="mask" id="maskJoin">
+  <div class="modal">
+    <h3>进入「<span id="joinRoomName"></span>」</h3>
+    <div class="muted">此房间有口令护持</div>
+    <div class="field">
+      <label>口令</label>
+      <input class="input" id="joinPass" maxlength="20" autocomplete="off">
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="btnJoinCancel">取消</button>
+      <button class="btn gold" id="btnJoinOk">进入</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="vendor/mqtt.min.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
