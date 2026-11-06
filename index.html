@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>阿狸 · 计算机视觉 / 深度学习</title>
+<meta name="description" content="阿狸的个人主页 —— 计算机视觉与深度学习方向的开发者，开源项目与作品集。">
+<meta name="theme-color" content="#fbfbfd">
+<meta property="og:title" content="阿狸 · 计算机视觉 / 深度学习">
+<meta property="og:description" content="复现、调优、落地：计算机视觉方向的开源项目与笔记。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>🦊</text></svg>">
+<style>
+  :root{
+    --bg:#fbfbfd;
+    --card:#ffffff;
+    --ink:#14161a;
+    --ink-2:#4a4f59;
+    --ink-3:#8a8f9a;
+    --line:#e8e9ee;
+    --accent:#0f766e;
+    --accent-2:#0284c7;
+    --accent-soft:#e6f4f1;
+    --radius:18px;
+    --shadow:0 1px 2px rgba(16,18,28,.04), 0 8px 24px -12px rgba(16,18,28,.14);
+    --shadow-hover:0 2px 4px rgba(16,18,28,.05), 0 18px 40px -18px rgba(15,118,110,.35);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1014; --card:#16181e; --ink:#f2f3f7; --ink-2:#b6bac4; --ink-3:#7d838f;
+      --line:#252932; --accent:#2dd4bf; --accent-2:#38bdf8; --accent-soft:#132322;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+      --shadow-hover:0 2px 4px rgba(0,0,0,.5), 0 18px 40px -18px rgba(45,212,191,.28);
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    line-height:1.65;-webkit-font-smoothing:antialiased;overflow-x:hidden;
+  }
+  .glow{position:fixed;border-radius:50%;filter:blur(90px);opacity:.48;pointer-events:none;z-index:0}
+  .glow.a{width:520px;height:520px;background:#b9ece4;top:-240px;left:-170px}
+  .glow.b{width:440px;height:440px;background:#c7e5ff;top:140px;right:-190px;opacity:.4}
+  @media (prefers-color-scheme: dark){
+    .glow.a{background:#123f3a;opacity:.6}
+    .glow.b{background:#0d2f45;opacity:.55}
+  }
+  .wrap{position:relative;z-index:1;max-width:860px;margin:0 auto;padding:0 24px}
+
+  header{padding:92px 0 52px}
+  .avatar{
+    width:74px;height:74px;border-radius:23px;display:grid;place-items:center;font-size:34px;
+    background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);margin-bottom:24px;
+  }
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:7px;font-size:12.5px;letter-spacing:.04em;
+    color:var(--accent);background:var(--accent-soft);
+    border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);
+    padding:5px 12px;border-radius:999px;margin-bottom:18px;font-weight:600;
+  }
+  .dot-live{width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.82)}}
+  h1{font-size:clamp(33px,5.6vw,50px);line-height:1.16;margin:0 0 18px;letter-spacing:-.02em;font-weight:750}
+  h1 .grad{
+    background:linear-gradient(100deg,#0f766e,#0284c7 60%,#6d28d9);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .lede{font-size:17px;color:var(--ink-2);max-width:640px;margin:0 0 30px}
+  .lede strong{color:var(--ink);font-weight:600}
+
+  .actions{display:flex;flex-wrap:wrap;gap:12px}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;
+    font-size:14.5px;font-weight:600;text-decoration:none;border:1px solid transparent;transition:.22s ease;
+  }
+  .btn.primary{background:var(--ink);color:var(--bg);box-shadow:var(--shadow)}
+  .btn.primary:hover{transform:translateY(-2px);box-shadow:var(--shadow-hover)}
+  .btn.ghost{background:var(--card);color:var(--ink);border-color:var(--line);box-shadow:var(--shadow)}
+  .btn.ghost:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent) 38%,var(--line))}
+  .btn svg{width:16px;height:16px;fill:currentColor}
+
+  section{padding:44px 0}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:24px}
+  .sec-head h2{font-size:20px;margin:0;letter-spacing:-.01em;font-weight:700}
+  .sec-head .line{flex:1;height:1px;background:var(--line)}
+  .sec-head .idx{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;letter-spacing:.08em}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:680px){.grid{grid-template-columns:1fr}}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px;box-shadow:var(--shadow);transition:.25s cubic-bezier(.2,.7,.3,1);
+    display:flex;flex-direction:column;gap:10px;text-decoration:none;color:inherit;
+  }
+  .card:hover{transform:translateY(-4px);box-shadow:var(--shadow-hover);border-color:color-mix(in srgb,var(--accent) 32%,var(--line))}
+  .card .top{display:flex;align-items:center;gap:10px}
+  .card .ico{
+    width:36px;height:36px;border-radius:11px;display:grid;place-items:center;font-size:17px;flex:0 0 auto;
+    background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 16%,transparent);
+  }
+  .card h3{margin:0;font-size:15.5px;font-weight:680;letter-spacing:-.01em;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .card h3 .repo{font-size:12.5px;font-weight:500;color:var(--ink-3);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .card p{margin:0;font-size:13.8px;color:var(--ink-2);line-height:1.6}
+  .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:6px}
+  .tag{
+    font-size:11.5px;color:var(--ink-2);background:color-mix(in srgb,var(--ink) 5%,transparent);
+    border:1px solid var(--line);padding:3px 8px;border-radius:7px;
+  }
+  .star{font-size:11.5px;color:var(--ink-3);display:inline-flex;align-items:center;gap:3px}
+
+  .stack{display:flex;flex-direction:column;gap:15px}
+  .stack-row{display:grid;grid-template-columns:112px 1fr;gap:14px;align-items:start}
+  @media (max-width:560px){.stack-row{grid-template-columns:1fr;gap:8px}}
+  .stack-row .k{font-size:12.5px;color:var(--ink-3);letter-spacing:.05em;padding-top:5px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{
+    font-size:13px;padding:6px 13px;border-radius:10px;background:var(--card);
+    border:1px solid var(--line);color:var(--ink);box-shadow:0 1px 1px rgba(16,18,28,.03);transition:.2s;
+  }
+  .chip:hover{border-color:color-mix(in srgb,var(--accent) 42%,var(--line));color:var(--accent);transform:translateY(-1px)}
+
+  .about{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px;box-shadow:var(--shadow);font-size:15px;color:var(--ink-2)}
+  .about p{margin:0 0 14px}
+  .about p:last-child{margin:0}
+  .about b{color:var(--ink);font-weight:640}
+
+  .links{display:flex;flex-wrap:wrap;gap:10px}
+  .link{
+    display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:var(--ink);
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 16px;
+    font-size:14px;transition:.22s;box-shadow:0 1px 1px rgba(16,18,28,.03);
+  }
+  .link:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:color-mix(in srgb,var(--accent) 36%,var(--line))}
+  .link svg{width:16px;height:16px;fill:currentColor;opacity:.85}
+
+  footer{
+    padding:52px 0 60px;border-top:1px solid var(--line);margin-top:38px;
+    display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;font-size:12.8px;color:var(--ink-3);
+  }
+  footer a{color:var(--ink-3);text-decoration:none}
+  footer a:hover{color:var(--accent)}
+
+  .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s cubic-bezier(.2,.7,.3,1)}
+  .reveal.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion: reduce){
+    .reveal{opacity:1;transform:none;transition:none}
+    html{scroll-behavior:auto}
+    .card:hover,.btn:hover,.link:hover,.chip:hover{transform:none}
+  }
+</style>
+</head>
+<body>
+<div class="glow a"></div>
+<div class="glow b"></div>
+
+<div class="wrap">
+
+  <header id="top">
+    <div class="avatar reveal">🦊</div>
+    <div class="eyebrow reveal"><span class="dot-live"></span>计算机视觉 · 深度学习</div>
+    <h1 class="reveal">你好，我是<span class="grad">阿狸</span></h1>
+    <p class="lede reveal">
+      做 <strong>计算机视觉</strong> 方向的工作：复现经典网络、清理训练数据、把模型从 Notebook 推到能跑的状态。
+      喜欢把论文里的东西真正跑起来，也喜欢写顺手的小工具省掉重复劳动。
+    </p>
+    <div class="actions reveal">
+      <a class="btn primary" href="#work">看看我的项目</a>
+      <a class="btn ghost" href="https://github.com/liang1433223" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </header>
+
+  <section id="work">
+    <div class="sec-head reveal"><span class="idx">01</span><h2>开源项目</h2><span class="line"></span></div>
+    <div class="grid">
+
+      <a class="card reveal" href="https://github.com/liang1433223/car_classify" target="_blank" rel="noopener">
+        <div class="top"><span class="ico">🚗</span><h3>车辆车型分类<span class="repo">car_classify</span></h3></div>
+        <p>从数据到推理的完整分类流程：图像预处理、迁移学习微调、指标评估，跑通一条可复用的训练链路。</p>
+        <div class="tags"><span class="tag">Python</span><span class="tag">图像分类</span><span class="tag">迁移学习</span><span class="star">★ 2</span></div>
+      </a>
+
+      <a class="card reveal" href="https://github.com/liang1433223/paddleGAN-wechaty" target="_blank" rel="noopener">
+        <div class="top"><span class="ico">🎨</span><h3>生成模型 + 微信机器人<span class="repo">paddleGAN-wechaty</span></h3></div>
+        <p>AI 创造营作品：把 PaddleGAN 的图像生成能力接到 Wechaty 上，聊天窗口就是生成入口。</p>
+        <div class="tags"><span class="tag">PaddlePaddle</span><span class="tag">GAN</span><span class="tag">Wechaty</span><span class="star">★ 4</span></div>
+      </a>
+
+      <a class="card reveal" href="https://github.com/liang1433223/AlexNet-Prod" target="_blank" rel="noopener">
+        <div class="top"><span class="ico">🧱</span><h3>AlexNet 复现<span class="repo">AlexNet-Prod</span></h3></div>
+        <p>逐层复现 AlexNet 的结构与训练过程，配合 Notebook 记录每一步的调参和结果对比。</p>
+        <div class="tags"><span class="tag">PyTorch</span><span class="tag">CNN</span><span class="tag">Jupyter</span></div>
+      </a>
+
+      <a class="card reveal" href="https://github.com/liang1433223/unet" target="_blank" rel="noopener">
+        <div class="top"><span class="ico">🧩</span><h3>U-Net 语义分割<span class="repo">unet</span></h3></div>
+        <p>编解码结构的语义分割实践，处理像素级标注与掩码生成，验证小数据集上的收敛表现。</p>
+        <div class="tags"><span class="tag">语义分割</span><span class="tag">U-Net</span><span class="tag">掩码</span></div>
+      </a>
+
+    </div>
+
+    <a class="card reveal" href="https://github.com/liang1433223/labelme_to_VOC-COCO" target="_blank" rel="noopener" style="margin-top:16px">
+      <div class="top"><span class="ico">🔧</span><h3>标注格式转换工具<span class="repo">labelme_to_VOC-COCO</span></h3></div>
+      <p>在 labelme 的 JSON 与 VOC / COCO 之间互转，解决标注工具和训练框架格式不一致的老问题。</p>
+      <div class="tags"><span class="tag">Python</span><span class="tag">数据工程</span><span class="tag">标注流水线</span></div>
+    </a>
+  </section>
+
+  <section>
+    <div class="sec-head reveal"><span class="idx">02</span><h2>技术栈</h2><span class="line"></span></div>
+    <div class="stack reveal">
+      <div class="stack-row">
+        <span class="k">语言</span>
+        <div class="chips">
+          <span class="chip">Python</span><span class="chip">C++</span><span class="chip">Shell</span><span class="chip">SQL</span>
+        </div>
+      </div>
+      <div class="stack-row">
+        <span class="k">深度学习</span>
+        <div class="chips">
+          <span class="chip">PyTorch</span><span class="chip">PaddlePaddle</span>
+          <span class="chip">CNN</span><span class="chip">GAN</span><span class="chip">语义分割</span>
+        </div>
+      </div>
+      <div class="stack-row">
+        <span class="k">视觉 / 数据</span>
+        <div class="chips">
+          <span class="chip">OpenCV</span><span class="chip">NumPy</span>
+          <span class="chip">Pandas</span><span class="chip">Matplotlib</span>
+        </div>
+      </div>
+      <div class="stack-row">
+        <span class="k">环境 / 工具</span>
+        <div class="chips">
+          <span class="chip">Jupyter</span><span class="chip">Linux / SSH</span>
+          <span class="chip">Conda</span><span class="chip">Docker</span><span class="chip">Git</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head reveal"><span class="idx">03</span><h2>关于我</h2><span class="line"></span></div>
+    <div class="about reveal">
+      <p>我是<b>阿狸</b>，做计算机视觉和深度学习。喜欢从最基础的地方开始——<b>先把经典网络复现一遍</b>，再谈改动和创新。</p>
+      <p>日常打交道最多的其实不是模型本身，而是数据：标注格式、脏数据清洗、训练集和验证集的划分。踩过的坑多了就顺手写成小工具，这也是 <b>labelme_to_VOC-COCO</b> 的由来。</p>
+      <p>目前在做模型训练与落地的相关实践。有想法、想一起做点什么，随时找我。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head reveal"><span class="idx">04</span><h2>联系</h2><span class="line"></span></div>
+    <div class="links reveal">
+      <a class="link" href="https://github.com/liang1433223" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        github.com/liang1433223
+      </a>
+      <a class="link" href="mailto:jiangxiaoli256@gmail.com">
+        <svg viewBox="0 0 16 16"><path d="M1.75 2h12.5A1.75 1.75 0 0 1 16 3.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25v-8.5A1.75 1.75 0 0 1 1.75 2Zm0 1.5a.25.25 0 0 0-.25.25v.34l6.5 3.9 6.5-3.9V3.75a.25.25 0 0 0-.25-.25H1.75Zm12.75 2.4-6.24 3.75a.75.75 0 0 1-.77 0L1.5 5.9v6.35c0 .14.11.25.25.25h12.5a.25.25 0 0 0 .25-.25V5.9Z"/></svg>
+        邮箱
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    <span>© <span id="year">2026</span> 阿狸 · 手写 HTML，托管于 GitHub Pages</span>
+    <a href="#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">回到顶部 ↑</a>
+  </footer>
+
+</div>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  var items = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e, i){
+        if (e.isIntersecting){
+          setTimeout(function(){ e.target.classList.add('in'); }, Math.min(i * 60, 240));
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    items.forEach(function(el){ io.observe(el); });
+  } else {
+    items.forEach(function(el){ el.classList.add('in'); });
+  }
+</script>
+</body>
+</html>
