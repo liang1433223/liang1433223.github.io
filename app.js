@@ -229,7 +229,7 @@ function connectBroker(bi) {
     if (S.wantReconnect) scheduleRetry(bi);
   });
 
-  c.on('message', (topic, buf) => onMessage(bi, topic, buf));
+  c.on('message', (topic, buf, packet) => onMessage(bi, topic, buf, packet));
 }
 
 function scheduleRetry(bi) {
@@ -275,7 +275,7 @@ function primaryClient() {
 }
 
 /* ================= 收消息 ================= */
-function onMessage(bi, topic, buf) {
+function onMessage(bi, topic, buf, packet) {
   const text = buf ? buf.toString() : '';
 
   if (topic.startsWith(NS + '/lobby/')) {
@@ -289,7 +289,16 @@ function onMessage(bi, topic, buf) {
       o._b = (typeof o.b === 'number' && S.brokers[o.b]) ? o.b : bi;   // 记住房主在哪条通道
       o._ts = Date.now();                                               // 新鲜度用本地时钟，免疫双方时钟偏差
       const cur = S.lobby.get(rid);
+      // 订阅瞬间收到的 retained 是"历史值"，房主可能早已离开 → 先标记为待确认。
+      // 注意：同一份历史值会在多条通道上各来一次，所以不能用"收到次数"判断，
+      // 只能用 ①非 retained 的实时推送（房主每 4s 一跳）②同一通道连续 3 次推送（兜底）。
+      const same = cur && cur._hb === bi;
+      o._hb = bi;
+      o._hc = (same ? (cur._hc || 1) : 0) + 1;
+      o._live = (!packet || packet.retain !== true || o._hc >= 3) ? 1 : 0;
+      if (cur && cur._live) o._live = 1;
       if (!cur || (o.t || 0) >= (cur.t || 0)) S.lobby.set(rid, o);
+      else if (cur && o._live) cur._live = 1;
       renderLobby();
     }
     return;
@@ -599,7 +608,9 @@ function tick() {
   // 大厅：过期条目清掉（自愈），顺便清理通道上的 retained 幽灵
   let changed = false;
   for (const [rid, v] of [...S.lobby]) {
-    if (now - (v._ts || 0) > LOBBY_STALE_MS) {
+    const untrusted = !v._live;
+    const ttl = untrusted ? Math.min(LOBBY_STALE_MS, 9000) : LOBBY_STALE_MS;
+    if (now - (v._ts || 0) > ttl) {
       S.lobby.delete(rid);
       for (const b of S.brokers) {
         if (!b.connected) continue;
@@ -675,7 +686,7 @@ function renderLobby() {
   const now = Date.now();
   const anyConn = S.brokers.some(b => b.connected);
   const rooms = [...S.lobby.values()]
-    .filter(r => r && r.r && now - (r._ts || 0) < LOBBY_STALE_MS)
+    .filter(r => r && r.r && r._live && now - (r._ts || 0) < LOBBY_STALE_MS)
     .sort((a, b) => (b.t || 0) - (a.t || 0));
 
   if ($('#lobbyCnt')) $('#lobbyCnt').textContent = rooms.length;
