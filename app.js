@@ -350,9 +350,13 @@ function onCtrl(o) {
 }
 
 function onChat(o) {
-  if (!o.i || !o.x) return;
+  if (!o.i) return;
   if (o.f === S.me.id) return;                 // 自己发的已本地渲染
-  addBubble({ name: o.n || '客', avatar: o.a || AVATARS[0], text: o.x, self: false });
+  if (o.img) {
+    addImgBubble({ name: o.n || '客', avatar: o.a || AVATARS[0], src: o.img, self: false });
+  } else if (o.x) {
+    addBubble({ name: o.n || '客', avatar: o.a || AVATARS[0], text: o.x, self: false });
+  }
 }
 
 /* ================= 发消息（房间内全部走密文） ================= */
@@ -396,6 +400,97 @@ async function sendMessage(text) {
     return;
   }
   addBubble({ name: S.me.name, avatar: S.me.avatar, text, self: true });
+}
+
+/* ================= 图片消息 ================= */
+const IMG_MAX_SIDE = 1280;          // 压缩后最长边
+const IMG_TARGET_B64 = 200 * 1024;  // 单图 base64 上限（密文≈1.4 倍，仍远低于 broker 包上限）
+const IMG_HARD_LIMIT = 380 * 1024;
+
+function loadImgEl(url) {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('图片解析失败'));
+    im.src = url;
+  });
+}
+
+/* 浏览器端压缩：等比缩放 + JPEG 质量递减，保证密文包不超过 broker 限制 */
+async function compressImage(file) {
+  if (!/^image\//.test(file.type)) throw new Error('请选择图片文件');
+  if (file.size > 20 * 1024 * 1024) throw new Error('图片过大（限 20MB 原图）');
+  const url = URL.createObjectURL(file);
+  let img;
+  try { img = await loadImgEl(url); } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
+
+  let w = img.naturalWidth || img.width;
+  let h = img.naturalHeight || img.height;
+  if (!w || !h) throw new Error('图片尺寸读取失败');
+
+  const draw = (ww, hh) => {
+    const cv = document.createElement('canvas');
+    cv.width = ww; cv.height = hh;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#0a0d18';                     // 透明 PNG 不留黑块
+    ctx.fillRect(0, 0, ww, hh);
+    ctx.drawImage(img, 0, 0, ww, hh);
+    return cv;
+  };
+
+  let side = IMG_MAX_SIDE;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const scale = Math.min(1, side / Math.max(w, h));
+    const ww = Math.max(1, Math.round(w * scale));
+    const hh = Math.max(1, Math.round(h * scale));
+    const cv = draw(ww, hh);
+    let q = 0.82;
+    let data = cv.toDataURL('image/jpeg', q);
+    while (data.length > IMG_TARGET_B64 && q > 0.42) {
+      q -= 0.12;
+      data = cv.toDataURL('image/jpeg', q);
+    }
+    if (data.length <= IMG_TARGET_B64 || attempt === 3) {
+      if (data.length > IMG_HARD_LIMIT) throw new Error('图片压不下去，换张小的吧');
+      return data;
+    }
+    side = Math.round(side * 0.72);                 // 还是太大 → 缩尺寸再来
+  }
+}
+
+async function sendImage(dataUrl) {
+  if (!S.roomId || !dataUrl) return;
+  const c = primaryClient();
+  if (!c) { toast('云路未通，消息发不出去'); return; }
+  const topic = T.msg(S.roomId, S.pwHash);
+  const payload = {
+    r: S.roomId, i: S.me.id + ':' + (++S.seq), f: S.me.id,
+    n: S.me.name, a: S.me.avatar, img: dataUrl, t: Date.now(),
+  };
+  try {
+    const body = await encJSON(payload);   // 图片与文字同一条密文通道，broker 只看到 {iv,d}
+    await new Promise(res => c.publish(topic, body, { qos: 1 }, () => res()));
+  } catch (_) {
+    toast('图片发送失败');
+    return;
+  }
+  addImgBubble({ name: S.me.name, avatar: S.me.avatar, src: dataUrl, self: true });
+}
+
+async function pickAndSendImage(file) {
+  const btn = $('#btnImg');
+  if (!file || !S.roomId) return;
+  try {
+    btn.disabled = true; btn.classList.add('sending');
+    toast('正在压缩图片…', 1200);
+    const dataUrl = await compressImage(file);
+    await sendImage(dataUrl);
+  } catch (e) {
+    toast(e.message || '图片处理失败', 2600);
+  } finally {
+    btn.disabled = false; btn.classList.remove('sending');
+    if ($('#fileImg')) $('#fileImg').value = '';
+  }
 }
 
 /* ================= 房间生命周期 ================= */
@@ -682,6 +777,37 @@ function addBubble(m) {
   if (near || m.self) chat.scrollTop = chat.scrollHeight;
 }
 
+function addImgBubble(m) {
+  const chat = $('#chat');
+  const near = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 140;
+  const div = document.createElement('div');
+  div.className = 'msg' + (m.self ? ' self' : '');
+  div.innerHTML = `
+    <img class="av" src="${esc(m.avatar)}" alt="">
+    <div class="body">
+      <div class="who"><span>${esc(m.name)}</span></div>
+      <div class="bubble img"><img src="${esc(m.src)}" alt="图片" loading="lazy"></div>
+    </div>`;
+  const pic = div.querySelector('.bubble.img img');
+  if (pic) pic.onclick = () => openLightbox(m.src);
+  chat.appendChild(div);
+  if (near || m.self) chat.scrollTop = chat.scrollHeight;
+}
+
+function openLightbox(src) {
+  const lb = $('#lightbox');
+  if (!lb) return;
+  lb.querySelector('img').src = src;
+  lb.classList.add('on');
+}
+
+function closeLightbox() {
+  const lb = $('#lightbox');
+  if (!lb) return;
+  lb.classList.remove('on');
+  lb.querySelector('img').src = '';
+}
+
 function renderLobby() {
   const now = Date.now();
   const anyConn = S.brokers.some(b => b.connected);
@@ -809,6 +935,27 @@ function bindRoomUI() {
   $('#msgInput').addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   });
+
+  // 图片：点按钮唤起文件选择；支持直接粘贴图片
+  $('#btnImg').onclick = () => { if (S.roomId) $('#fileImg').click(); };
+  $('#fileImg').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) pickAndSendImage(f);
+  });
+  $('#msgInput').addEventListener('paste', e => {
+    if (!S.roomId) return;
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (const it of items) {
+      if (it.kind === 'file' && /^image\//.test(it.type)) {
+        const f = it.getAsFile();
+        if (f) { e.preventDefault(); pickAndSendImage(f); }
+        return;
+      }
+    }
+  });
+  const lb = $('#lightbox');
+  if (lb) lb.onclick = closeLightbox;
+  window.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
 
   window.addEventListener('pagehide', () => {
     if (!S.roomId) return;
