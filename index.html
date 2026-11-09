@@ -200,6 +200,13 @@ header.bar{
   display:none;align-items:center;justify-content:center;z-index:50;padding:20px;
 }
 .mask.on{display:flex}
+.img-preview{
+  background:#0a0d18;border:1px solid var(--line);border-radius:14px;padding:6px;
+  display:flex;align-items:center;justify-content:center;max-height:46vh;overflow:hidden;margin-bottom:4px;
+}
+.img-preview img{max-width:100%;max-height:44vh;border-radius:10px;display:block;object-fit:contain}
+.img-modal{max-width:420px}
+.img-modal .muted{margin-bottom:12px}
 .modal{
   width:100%;max-width:380px;background:linear-gradient(180deg,#1c2440,#131830);
   border:1px solid var(--line);border-radius:20px;padding:26px 24px;box-shadow:var(--shadow);
@@ -308,6 +315,19 @@ header.bar{
 </div>
 
 <div id="lightbox"><img alt=""></div>
+
+<!-- 图片发送确认 -->
+<div class="mask" id="maskImg">
+  <div class="modal img-modal">
+    <h3>发送这张图片？</h3>
+    <div class="muted" id="imgMeta">发送前会自动压缩</div>
+    <div class="img-preview"><img id="imgPreview" alt="待发送图片"></div>
+    <div class="row">
+      <button class="btn ghost" id="btnImgCancel">取消</button>
+      <button class="btn gold" id="btnImgSend">发 送</button>
+    </div>
+  </div>
+</div>
 
 <!-- 建房弹窗 -->
 <div class="mask" id="maskCreate">
