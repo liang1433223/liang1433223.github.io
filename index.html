@@ -171,6 +171,28 @@ header.bar{
 .composer-in{display:flex;gap:10px;max-width:760px;margin:0 auto}
 .composer .input{flex:1}
 .composer .btn{padding:12px 20px}
+.btn-img{
+  flex:0 0 auto;width:46px;height:46px;border-radius:12px;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);color:var(--ink2);
+  display:flex;align-items:center;justify-content:center;font-size:19px;transition:.18s;
+}
+.btn-img:hover{border-color:rgba(227,180,92,.5);color:var(--gold)}
+.btn-img:disabled{opacity:.45;cursor:not-allowed}
+/* 图片消息 */
+.msg .bubble.img{padding:5px;line-height:0;overflow:hidden}
+.msg .bubble.img img{
+  display:block;max-width:260px;max-height:320px;width:auto;height:auto;
+  border-radius:12px;cursor:zoom-in;
+}
+@media(max-width:640px){.msg .bubble.img img{max-width:190px;max-height:250px}}
+/* 大图预览 */
+#lightbox{
+  position:fixed;inset:0;background:rgba(4,6,12,.94);z-index:90;
+  display:none;align-items:center;justify-content:center;padding:20px;cursor:zoom-out;
+}
+#lightbox.on{display:flex}
+#lightbox img{max-width:94vw;max-height:92vh;border-radius:12px;box-shadow:0 20px 60px -20px #000}
+.sending{opacity:.55}
 
 /* ============ 弹窗 / 提示 ============ */
 .mask{
@@ -276,12 +298,16 @@ header.bar{
     <div class="chat" id="chat"></div>
     <div class="composer">
       <div class="composer-in">
+        <button class="btn-img" id="btnImg" title="发送图片">🖼</button>
+        <input type="file" id="fileImg" accept="image/*" style="display:none">
         <input class="input" id="msgInput" maxlength="500" placeholder="说点什么…（Enter 发送）" autocomplete="off">
         <button class="btn gold" id="btnSend">发送</button>
       </div>
     </div>
   </section>
 </div>
+
+<div id="lightbox"><img alt=""></div>
 
 <!-- 建房弹窗 -->
 <div class="mask" id="maskCreate">
