@@ -459,9 +459,9 @@ async function compressImage(file) {
 }
 
 async function sendImage(dataUrl) {
-  if (!S.roomId || !dataUrl) return;
+  if (!S.roomId || !dataUrl) return false;
   const c = primaryClient();
-  if (!c) { toast('云路未通，消息发不出去'); return; }
+  if (!c) { toast('云路未通，消息发不出去'); return false; }
   const topic = T.msg(S.roomId, S.pwHash);
   const payload = {
     r: S.roomId, i: S.me.id + ':' + (++S.seq), f: S.me.id,
@@ -472,24 +472,63 @@ async function sendImage(dataUrl) {
     await new Promise(res => c.publish(topic, body, { qos: 1 }, () => res()));
   } catch (_) {
     toast('图片发送失败');
-    return;
+    return false;
   }
   addImgBubble({ name: S.me.name, avatar: S.me.avatar, src: dataUrl, self: true });
+  return true;
 }
 
-async function pickAndSendImage(file) {
-  const btn = $('#btnImg');
+/* ---------- 选图后先预览，用户点「发送」才真正发出 ---------- */
+let pendingImg = { file: null, url: '' };
+
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function clearPendingImg() {
+  if (pendingImg.url) { try { URL.revokeObjectURL(pendingImg.url); } catch (_) {} }
+  pendingImg = { file: null, url: '' };
+  const im = $('#imgPreview');
+  if (im) { im.removeAttribute('src'); }
+  const meta = $('#imgMeta');
+  if (meta) meta.textContent = '发送前会自动压缩';
+  const btn = $('#btnImgSend');
+  if (btn) { btn.disabled = false; btn.textContent = '发 送'; }
+  const mk = $('#maskImg');
+  if (mk) mk.classList.remove('on');
+  if ($('#fileImg')) $('#fileImg').value = '';
+}
+
+function pickImage(file) {
   if (!file || !S.roomId) return;
+  if (!/^image\//.test(file.type)) { toast('请选择图片文件', 2400); return; }
+  if (file.size > 20 * 1024 * 1024) { toast('图片过大（限 20MB 原图）', 2600); return; }
+  clearPendingImg();
+  pendingImg.file = file;
+  pendingImg.url = URL.createObjectURL(file);
+  $('#imgPreview').src = pendingImg.url;
+  $('#imgMeta').textContent = '原图 ' + fmtBytes(file.size) + ' · 发送前自动压缩';
+  $('#maskImg').classList.add('on');
+  if ($('#fileImg')) $('#fileImg').value = '';
+}
+
+async function sendPendingImage() {
+  const f = pendingImg.file;
+  if (!f) return;
+  const btn = $('#btnImgSend');
+  btn.disabled = true;
+  btn.textContent = '压缩中…';
   try {
-    btn.disabled = true; btn.classList.add('sending');
-    toast('正在压缩图片…', 1200);
-    const dataUrl = await compressImage(file);
-    await sendImage(dataUrl);
+    const dataUrl = await compressImage(f);
+    const ok = await sendImage(dataUrl);
+    if (ok) { clearPendingImg(); toast('图片已送出'); }
+    else { btn.disabled = false; btn.textContent = '发 送'; }
   } catch (e) {
     toast(e.message || '图片处理失败', 2600);
-  } finally {
-    btn.disabled = false; btn.classList.remove('sending');
-    if ($('#fileImg')) $('#fileImg').value = '';
+    btn.disabled = false;
+    btn.textContent = '发 送';
   }
 }
 
@@ -605,6 +644,7 @@ function hardLeave(notify) {
   }
   clearInterval(S.hbTimer); S.hbTimer = null;
   clearInterval(S.tickTimer); S.tickTimer = null;
+  if (typeof clearPendingImg === 'function') clearPendingImg();
   S.roomId = null; S.roomName = ''; S.pwHash = ''; S.isHost = false;
   S.members.clear(); S._msig = ''; S.pendingHere = null;
   S.aesKey = null; S.cacheBye = null; S.cacheLeave = null;
@@ -940,7 +980,7 @@ function bindRoomUI() {
   $('#btnImg').onclick = () => { if (S.roomId) $('#fileImg').click(); };
   $('#fileImg').addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
-    if (f) pickAndSendImage(f);
+    if (f) pickImage(f);
   });
   $('#msgInput').addEventListener('paste', e => {
     if (!S.roomId) return;
@@ -948,14 +988,24 @@ function bindRoomUI() {
     for (const it of items) {
       if (it.kind === 'file' && /^image\//.test(it.type)) {
         const f = it.getAsFile();
-        if (f) { e.preventDefault(); pickAndSendImage(f); }
+        if (f) { e.preventDefault(); pickImage(f); }
         return;
       }
     }
   });
+  // 待发送图片确认框
+  $('#btnImgCancel').onclick = clearPendingImg;
+  $('#btnImgSend').onclick = sendPendingImage;
+  $('#maskImg').addEventListener('click', e => {
+    if (e.target.id === 'maskImg') clearPendingImg();   // 点遮罩空白处也算取消
+  });
   const lb = $('#lightbox');
   if (lb) lb.onclick = closeLightbox;
-  window.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+  window.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if ($('#maskImg').classList.contains('on')) { clearPendingImg(); return; }
+    closeLightbox();
+  });
 
   window.addEventListener('pagehide', () => {
     if (!S.roomId) return;
